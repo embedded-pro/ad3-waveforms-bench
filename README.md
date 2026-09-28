@@ -13,7 +13,7 @@ It bundles what a bench needs besides the device under test:
 - `analysis` - pure signal analysis of captures: frequency, duty cycle, edges, dead time, phase, quadrature/SPI/UART decoding, statistics.
 - `FirmwareTerminal` - a serial client for a line-based command terminal (`OK`/`ERR` final lines, asynchronous `EVT` lines) on the device under test, plus the `ad3-bench-console` REPL.
 - A pytest plugin (`--ad3-serial`, `--ad3-remote`, `--no-ad3`, `--fake`, the `ad3` marker and fixture) and in-memory fakes of the WaveForms library and of a device terminal, so benches are unit tested without hardware.
-- `ad3-bench-server` - shares the AD3 of one machine (for example a Windows PC) over TCP, so benches run in a Docker container or on another machine.
+- `ad3-bench-server` - shares the AD3 of one machine (for example a Windows PC) over TCP, so benches run in a Docker container or on another machine; `ad3-bench-gui` is the same server with a window and a tray icon, also shipped as a Windows installer and a Linux AppImage.
 
 It was split out of the [hal-ti](https://github.com/embedded-pro/hal-ti) hardware-in-the-loop validation, which uses it to validate TM4C drivers.
 
@@ -255,7 +255,7 @@ The AD3 is plugged into one machine (typically Windows with the WaveForms runtim
  └──────────────────────────────┘                └──────────────────────────────┘
 ```
 
-On the Windows host:
+On the Windows host, either install `ad3-bench-server-<version>-windows-setup.exe` from the [releases](https://github.com/embedded-pro/ad3-waveforms-bench/releases) (see [GUI](#gui)), or from Python:
 
 ```powershell
 pip install ad3-waveforms-bench port-bridge
@@ -289,6 +289,23 @@ with AnalogDiscovery3(remote="host.docker.internal:5025") as ad3, FirmwareTermin
 
 [`examples/docker`](examples/docker) has a `Dockerfile`, a `compose.yaml` and an example test.
 
+### GUI
+
+`ad3-bench-gui` runs the same server behind a window, with the layout and behaviour of the [port-bridge](https://github.com/gabrielfrasantos/port-bridge) GUI:
+
+- WaveForms library (default location, a custom path or the fake device) with *Detect devices*, bind address, TCP port and token, log level.
+- Status dots for the server and the connected client, a Start/Stop button and a live log panel; the log is also written to a rotating file (`%APPDATA%\ad3-bench-server\` on Windows, `~/.cache/ad3-bench-server/` on Linux).
+- A tray icon (show/hide, start/stop, check for updates, open the log); closing the window keeps the server running in the tray. Settings are remembered.
+- `--start` starts the server right away (as does *Start the server on launch*) and `--minimized` starts in the tray; the Windows installer's optional autostart entry uses both.
+- It checks the GitHub releases for a newer version at startup.
+
+Every release attaches `ad3-bench-server-<version>-windows-setup.exe` (Inno Setup, no admin rights needed) and `ad3-bench-server-<version>-x86_64.AppImage`. From Python:
+
+```bash
+pip install "ad3-waveforms-bench[gui]"
+ad3-bench-gui
+```
+
 ## Why ctypes instead of pydwf
 
 - `instruments/dwf.py` calls the `FDwf*` C functions through `ctypes`, exactly like the official WaveForms SDK Python samples, and uses the official `dwfconstants.py` values.
@@ -301,7 +318,7 @@ with AnalogDiscovery3(remote="host.docker.internal:5025") as ad3, FirmwareTermin
 ```bash
 python -m venv .venv
 . .venv/bin/activate
-pip install -e ".[dev]"
+pip install -e ".[dev,gui]"
 ruff check .
 ruff format --check .
 mypy

@@ -9,3 +9,7 @@ dist/
 .coverage
 coverage.xml
 htmlcov/
+
+assets/
+installer-output/
+*.AppImage

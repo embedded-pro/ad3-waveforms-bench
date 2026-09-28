@@ -5,7 +5,7 @@
 ```bash
 python -m venv .venv
 . .venv/bin/activate          # .venv\Scripts\activate on Windows
-pip install -e ".[dev]"
+pip install -e ".[dev,gui]"   # gui: PySide6, for the GUI and its tests
 pre-commit install            # optional: ruff on every commit
 ```
 
@@ -28,7 +28,17 @@ The version comes from the git tag (setuptools-scm); there is no version number 
 
 1. Move the `Unreleased` entries of `CHANGELOG.md` under a new version heading and merge that to `main`.
 2. Tag and push: `git tag v0.2.0 && git push origin v0.2.0`.
-3. The `Release` workflow builds the sdist and wheel, publishes them to PyPI and creates the GitHub release.
+3. The `Release` workflow builds the sdist and wheel, publishes them to PyPI, creates the GitHub release and
+   then runs `Build Installers`, which attaches the Windows installer and the Linux AppImage of the GUI.
+   `Build Installers` can also be run by hand (Actions > Build Installers > Run workflow) for an existing tag.
+
+To build the GUI bundle locally:
+
+```bash
+pip install ".[gui]" pyinstaller
+python scripts/generate_icon.py      # QT_QPA_PLATFORM=offscreen without a display
+pyinstaller ad3-bench-gui.spec       # dist/ad3-bench-gui.exe on Windows, dist/ad3-bench-gui/ on Linux
+```
 
 ### One-time PyPI setup
 

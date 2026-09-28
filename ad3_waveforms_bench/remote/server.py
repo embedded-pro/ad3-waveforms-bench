@@ -62,6 +62,8 @@ class Ad3Server:
         self._backend_factory = backend_factory
         self._backend: Any = None
         self._token = token
+        self.client: str | None = None
+        """`host:port` of the connected client, None when idle."""
 
     @property
     def backend(self) -> Any:
@@ -114,6 +116,7 @@ class Ad3Server:
 
     def _run_client(self, client: socket.socket, peer: Any) -> None:
         self._clients.add(client)
+        self.client = "{}:{}".format(*peer[:2])
         log.info("client %s:%d connected", *peer[:2])
         try:
             self.serve(client)
@@ -124,6 +127,7 @@ class Ad3Server:
             with contextlib.suppress(OSError):
                 client.close()
             log.info("client %s:%d disconnected", *peer[:2])
+            self.client = None
             self._busy.release()
 
     def _refuse(self, client: socket.socket) -> None:
