@@ -325,7 +325,7 @@ mypy
 pytest -q
 ```
 
-CI runs these on Linux, Windows and macOS with Python 3.10-3.14 and checks the built wheel. Releases are published to PyPI from `v*` tags, see [CONTRIBUTING.md](CONTRIBUTING.md).
+CI runs these on Linux, Windows and macOS with Python 3.10-3.14 and checks the built wheel. Releases are made by release-please from [Conventional Commits](https://www.conventionalcommits.org/) and published to PyPI, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
