@@ -10,7 +10,7 @@ from .terminal import FirmwareError, FirmwareTerminal, TerminalError, TerminalTi
 try:
     __version__ = version("ad3-waveforms-bench")
 except PackageNotFoundError:  # running from a source tree that is not installed
-    __version__ = "0.0.0"
+    __version__ = "0.2.0"
 
 __all__ = [
     "AnalogDiscovery3",
