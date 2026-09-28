@@ -1,20 +1,32 @@
 name: Release
 
-# Push a tag such as v0.2.0 to publish. The version comes from the tag (setuptools-scm).
+# Builds the sdist and wheel of a release tag and attaches them to its GitHub release.
+# Called by release-please.yml (which also publishes the files to PyPI); run it by hand to backfill a tag.
 on:
-  push:
-    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: Tag to build (e.g. v0.2.0)
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      tag_name:
+        description: Tag to build (e.g. v0.2.0)
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 jobs:
   build:
+    name: Build sdist + wheel
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          ref: ${{ inputs.tag_name }}
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
@@ -22,32 +34,20 @@ jobs:
       - run: python -m build
       - run: python -m twine check --strict dist/*
       - name: Check that the version matches the tag
+        env:
+          TAG_NAME: ${{ inputs.tag_name }}
         run: |
-          expected="${GITHUB_REF_NAME#v}"
           ls dist/
-          test -f "dist/ad3_waveforms_bench-${expected}-py3-none-any.whl"
+          test -f "dist/ad3_waveforms_bench-${TAG_NAME#v}-py3-none-any.whl"
       - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
-
-  pypi:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: pypi
-      url: https://pypi.org/project/ad3-waveforms-bench/
-    permissions:
-      id-token: write # trusted publishing, no API token stored
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          name: dist
-          path: dist/
-      - uses: pypa/gh-action-pypi-publish@release/v1
+          if-no-files-found: error
 
   github-release:
-    needs: pypi
+    name: Upload GitHub Release assets
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -56,14 +56,8 @@ jobs:
         with:
           name: dist
           path: dist/
-      - env:
+      - name: Upload assets
+        env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
-
-  installers:
-    needs: github-release
-    permissions:
-      contents: write
-    uses: ./.github/workflows/build-installers.yml
-    with:
-      tag_name: ${{ github.ref_name }}
+          TAG_NAME: ${{ inputs.tag_name }}
+        run: gh release upload "$TAG_NAME" dist/* --clobber --repo "$GITHUB_REPOSITORY"

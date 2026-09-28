@@ -1,7 +1,7 @@
 name: Build Installers
 
 on:
-  # Called by release.yml once the GitHub release exists.
+  # Called by release-please.yml after release-please created the release.
   workflow_call:
     inputs:
       tag_name:
@@ -44,7 +44,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.tag_name || github.ref }}
-          fetch-depth: 0 # setuptools-scm derives the version from the tag
 
       - uses: actions/setup-python@v7
         with:
@@ -101,7 +100,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.tag_name || github.ref }}
-          fetch-depth: 0
 
       - uses: actions/setup-python@v7
         with:

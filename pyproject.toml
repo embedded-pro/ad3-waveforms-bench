@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=77", "setuptools-scm>=8"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "ad3-waveforms-bench"
-dynamic = ["version"]
+version = "0.1.0"
 description = "Drive a Digilent Analog Discovery 3 through the WaveForms SDK for hardware-in-the-loop test benches"
 readme = "README.md"
 license = "MIT"
@@ -64,9 +64,6 @@ include = ["ad3_waveforms_bench*"]
 
 [tool.setuptools.package-data]
 ad3_waveforms_bench = ["py.typed"]
-
-[tool.setuptools_scm]
-fallback_version = "0.0.0"
 
 [tool.pytest.ini_options]
 minversion = "7.4"

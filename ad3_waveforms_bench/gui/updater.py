@@ -32,10 +32,7 @@ def parse_version(version: str) -> tuple[int, ...]:
 
 
 def is_newer(latest: str, current: str) -> bool:
-    """Whether release `latest` is newer than the running `current` version.
-
-    A development build (`0.2.1.dev3+g...`, made after the 0.2.0 tag) counts as older than 0.2.1.
-    """
+    """Whether release `latest` is newer than the running `current` version (a `.dev` build is older)."""
     latest_key, current_key = parse_version(latest), parse_version(current)
     if latest_key != current_key:
         return latest_key > current_key
