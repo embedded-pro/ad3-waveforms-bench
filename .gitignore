@@ -5,3 +5,11 @@ dist/
 .pytest_cache/
 .ruff_cache/
 .venv/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+assets/
+installer-output/
+*.AppImage

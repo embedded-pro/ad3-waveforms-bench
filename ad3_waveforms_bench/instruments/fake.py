@@ -54,6 +54,9 @@ class FakeDwfApi:
     def last_error(self) -> str:
         return ""
 
+    def version(self) -> str:
+        return "fake"
+
     def __getattr__(self, name: str) -> Callable[..., int]:
         if not name.startswith("FDwf"):
             raise AttributeError(name)

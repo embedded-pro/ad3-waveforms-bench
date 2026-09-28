@@ -159,7 +159,7 @@ class FirmwareTerminal:
                 raise ValueError("either port or serial is required")
             import serial as pyserial
 
-            serial = pyserial.Serial(port, baudrate=baud, timeout=0.01, write_timeout=timeout)
+            serial = pyserial.serial_for_url(port, baudrate=baud, timeout=0.01, write_timeout=timeout)
         self._serial = serial
         self.port = port
         self.timeout = timeout

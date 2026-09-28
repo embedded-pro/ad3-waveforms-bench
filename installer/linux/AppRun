@@ -1,0 +1,4 @@
+#!/bin/sh
+# AppRun: entry point for the ad3-bench-server AppImage.
+# APPDIR is set by the AppImage runtime to the mountpoint of the image.
+exec "$APPDIR/usr/bin/ad3-bench-gui" "$@"

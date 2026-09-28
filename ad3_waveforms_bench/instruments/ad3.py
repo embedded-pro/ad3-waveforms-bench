@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 import time
 from collections.abc import Callable, Mapping, Sequence
 from ctypes import byref, c_double, c_int, c_ubyte, c_uint, c_uint16, create_string_buffer
@@ -692,14 +693,21 @@ class ProtocolCan(_Instrument):
 
 @dataclass
 class AnalogDiscovery3:
-    """Open by serial number (`serial`) or enumeration index (`index`, default first device)."""
+    """Open by serial number (`serial`) or enumeration index (`index`, default first device).
+
+    The WaveForms library is `api_factory()` when given; otherwise the library of the `ad3-bench-server` at
+    `remote` (`host[:port]`, default the `AD3_REMOTE` variable, token from `AD3_REMOTE_TOKEN`) when set;
+    otherwise the local library.
+    """
 
     serial: str | None = None
     index: int | None = None
     analog_limits: tuple[float, float] = (0.0, 3.3)
-    api_factory: Callable[[], DwfApi] | None = None
+    api_factory: Callable[[], Any] | None = None
+    remote: str | None = None
     api: Any = field(init=False, default=None)
     handle: c_int = field(init=False, default_factory=c_int)
+    _owns_api: bool = field(init=False, default=False, repr=False)
 
     def __post_init__(self) -> None:
         self.supplies = Supplies(self)
@@ -734,12 +742,15 @@ class AnalogDiscovery3:
 
     def open(self) -> None:
         if self.api is None:
-            if self.api_factory is None:
-                from .dwf import DwfApi
+            self.api = self._create_api()
+        try:
+            self._open_device()
+        except BaseException:
+            if not self.handle.value:
+                self._release_api()
+            raise
 
-                self.api = DwfApi()
-            else:
-                self.api = self.api_factory()
+    def _open_device(self) -> None:
         devices = self.list_devices(self.api)
         if not devices:
             raise InstrumentError("no Digilent device found")
@@ -756,6 +767,19 @@ class AnalogDiscovery3:
         self.reset_outputs()
         self.supplies.off()
 
+    def _create_api(self) -> Any:
+        if self.api_factory is not None:
+            return self.api_factory()
+        remote = self.remote or os.environ.get("AD3_REMOTE")
+        if remote:
+            from ..remote import RemoteDwfApi
+
+            self._owns_api = True
+            return RemoteDwfApi(remote, token=os.environ.get("AD3_REMOTE_TOKEN"))
+        from .dwf import DwfApi
+
+        return DwfApi()
+
     def reset_outputs(self) -> None:
         """Stop the pattern generator and wavegens, release every static DIO; the supplies are left as they are."""
         self.pattern.stop()
@@ -771,8 +795,17 @@ class AnalogDiscovery3:
             self.reset_outputs()
             self.supplies.off()
         finally:
-            self.api.FDwfDeviceClose(self.handle)
-            self.handle = c_int()
+            try:
+                self.api.FDwfDeviceClose(self.handle)
+            finally:
+                self.handle = c_int()
+                self._release_api()
+
+    def _release_api(self) -> None:
+        """Close the link to the `ad3-bench-server` when this device opened it."""
+        if self._owns_api:
+            api, self.api, self._owns_api = self.api, None, False
+            api.close()
 
 
 def _check_dio(dio: int) -> None:

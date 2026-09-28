@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=ad3-bench-server
+Comment=Share a Digilent Analog Discovery 3 over TCP
+Exec=ad3-bench-gui
+Icon=ad3-bench-server
+Type=Application
+Categories=Development;Electronics;Utility;
+Keywords=Analog Discovery;WaveForms;Digilent;hardware-in-the-loop;TCP;
+StartupNotify=true
