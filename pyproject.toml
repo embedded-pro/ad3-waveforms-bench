@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ad3-waveforms-bench"
+version = "0.1.0"
+description = "Drive a Digilent Analog Discovery 3 through the WaveForms SDK for hardware-in-the-loop test benches"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+dependencies = ["pyserial>=3.5", "pytest>=7.4"]
+keywords = ["analog discovery", "digilent", "waveforms", "hardware-in-the-loop", "pytest"]
+classifiers = [
+    "Framework :: Pytest",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
+    "Topic :: Software Development :: Testing",
+]
+
+[project.optional-dependencies]
+dev = ["ruff>=0.5"]
+
+[project.urls]
+Homepage = "https://github.com/embedded-pro/ad3-waveforms-bench"
+
+[project.scripts]
+ad3-bench-console = "ad3_waveforms_bench.console:main"
+
+[project.entry-points.pytest11]
+ad3_waveforms_bench = "ad3_waveforms_bench.pytest_plugin"
+
+[tool.setuptools.packages.find]
+include = ["ad3_waveforms_bench*"]
+
+[tool.pytest.ini_options]
+minversion = "7.4"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+filterwarnings = ["error::pytest.PytestUnknownMarkWarning"]
+
+[tool.ruff]
+line-length = 140
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]
+ignore = ["B008", "B905"]
