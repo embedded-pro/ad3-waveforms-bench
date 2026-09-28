@@ -159,9 +159,7 @@ class FirmwareTerminal:
                 raise ValueError("either port or serial is required")
             import serial as pyserial
 
-            # pyserial's RFC2217 client rejects write timeouts
-            write_timeout = None if port.startswith("rfc2217://") else timeout
-            serial = pyserial.serial_for_url(port, baudrate=baud, timeout=0.01, write_timeout=write_timeout)
+            serial = pyserial.serial_for_url(port, baudrate=baud, timeout=0.01, write_timeout=timeout)
         self._serial = serial
         self.port = port
         self.timeout = timeout

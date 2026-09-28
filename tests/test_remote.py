@@ -1,5 +1,6 @@
 import ctypes
 import socket
+import threading
 import time
 from ctypes import byref, c_char, c_double, c_int, c_ubyte, c_uint, c_uint16, create_string_buffer
 
@@ -9,7 +10,7 @@ from ad3_waveforms_bench.instruments.ad3 import AnalogDiscovery3
 from ad3_waveforms_bench.instruments.dwf import DwfError
 from ad3_waveforms_bench.instruments.fake import FakeDwfApi
 from ad3_waveforms_bench.remote import RemoteDwfApi, RemoteError, parse_address
-from ad3_waveforms_bench.remote.server import Ad3Server, SerialBridge, main, parse_serial_spec
+from ad3_waveforms_bench.remote.server import Ad3Server, main
 from ad3_waveforms_bench.remote.wire import Decoded, WireError, apply_outputs, encode_arg, type_code
 
 
@@ -83,8 +84,6 @@ def test_parse_address():
     assert parse_address("host.docker.internal") == ("host.docker.internal", 5025)
     assert parse_address("10.0.0.2:6000") == ("10.0.0.2", 6000)
     assert parse_address("[::1]:7000") == ("::1", 7000)
-    assert parse_serial_spec("COM5=4000") == ("COM5", 4000)
-    assert parse_serial_spec("loop://=4001") == ("loop://", 4001)
 
 
 @pytest.fixture
@@ -221,34 +220,32 @@ def test_unreachable_server_raises_oserror():
         RemoteDwfApi(f"127.0.0.1:{port}", timeout=1.0)
 
 
-def test_serial_bridge_over_rfc2217():
-    import serial
-
-    with (
-        SerialBridge("loop://", port=0) as bridge,
-        serial.serial_for_url(f"rfc2217://{_address(bridge)}", baudrate=115200, timeout=1.0) as port,
-    ):
-        port.baudrate = 921600
-        port.write(b"ping\r")
-        assert port.read(5) == b"ping\r"
-        port.write(bytes([0xFF, 0x00]))
-        assert port.read(2) == bytes([0xFF, 0x00])
-
-
-@pytest.mark.parametrize("remote", [False, True])
-def test_terminal_accepts_url_ports(remote):
+def test_terminal_accepts_socket_urls():
+    """A byte-stream bridge (such as port-bridge) is opened as `socket://host:port`."""
     from ad3_waveforms_bench.terminal import FirmwareTerminal
 
-    with SerialBridge("loop://", port=0) as bridge:
-        url = f"rfc2217://{_address(bridge)}" if remote else "loop://"
-        with FirmwareTerminal(url, timeout=1.0) as terminal:
+    with socket.create_server(("127.0.0.1", 0)) as listener:
+        port = listener.getsockname()[1]
+
+        def echo():
+            connection, _ = listener.accept()
+            with connection:
+                while data := connection.recv(1024):
+                    connection.sendall(data)
+
+        thread = threading.Thread(target=echo, daemon=True)
+        thread.start()
+        with FirmwareTerminal(f"socket://127.0.0.1:{port}", timeout=1.0) as terminal:
             terminal.write_raw(b"OK value=1\r\n")
-            assert terminal.pump(1.0) >= 1
+            assert terminal.pump(0.5) >= 1
+        thread.join(timeout=2)
 
 
-def test_server_cli_requires_something_to_serve():
-    with pytest.raises(SystemExit):
-        main(["--no-dwf"])
+def test_server_cli_help(capsys):
+    with pytest.raises(SystemExit) as exit_info:
+        main(["--help"])
+    assert exit_info.value.code == 0
+    assert "--token" in capsys.readouterr().out
 
 
 def test_pytest_option(pytester: pytest.Pytester, server):

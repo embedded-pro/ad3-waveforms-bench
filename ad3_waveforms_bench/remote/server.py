@@ -1,14 +1,14 @@
-"""`ad3-bench-server`: share the WaveForms library and serial ports of this machine over TCP.
+"""`ad3-bench-server`: share the WaveForms library of this machine over TCP.
 
-Run it on the machine the AD3 and the device under test are plugged into (for example Windows with the
-WaveForms runtime), and point the benches in a container at it:
+Run it on the machine the AD3 is plugged into (for example Windows with the WaveForms runtime), and point
+the benches in a container at it:
 
-    ad3-bench-server --serial COM5=4000
+    ad3-bench-server
     AD3_REMOTE=host.docker.internal:5025 pytest --ad3-remote host.docker.internal:5025
 
 One client at a time owns the library. When it disconnects, every device it left open is returned to the
-safe state (outputs released, supplies off) and closed. `--serial PORT=TCP` serves a serial port over
-RFC2217 (`rfc2217://host:TCP` in pyserial), so the client also sets the baud rate.
+safe state (outputs released, supplies off) and closed. Serial ports of the device under test are not
+forwarded here; use a byte-stream bridge such as port-bridge and open it as `socket://host:port`.
 """
 
 from __future__ import annotations
@@ -21,7 +21,6 @@ import os
 import signal
 import socket
 import threading
-import time
 from collections.abc import Callable
 from ctypes import c_int
 from typing import Any
@@ -42,17 +41,33 @@ def _listen(host: str, port: int) -> socket.socket:
     return server
 
 
-class _TcpService:
-    """Accepts clients on a background thread and serves one at a time; the others are turned away."""
+class Ad3Server:
+    """Forwards `FDwf*` calls to `backend_factory()` (the local `DwfApi`, or `FakeDwfApi` for tests).
 
-    name = "service"
+    Clients are accepted on a background thread and served one at a time; the others are turned away.
+    """
 
-    def __init__(self, host: str, port: int) -> None:
+    def __init__(
+        self,
+        backend_factory: Callable[[], Any],
+        host: str = "127.0.0.1",
+        port: int = DEFAULT_PORT,
+        token: str | None = None,
+    ) -> None:
         self._listener = _listen(host, port)
         self._busy = threading.Lock()
         self._closed = threading.Event()
         self._thread: threading.Thread | None = None
         self._clients: set[socket.socket] = set()
+        self._backend_factory = backend_factory
+        self._backend: Any = None
+        self._token = token
+
+    @property
+    def backend(self) -> Any:
+        if self._backend is None:
+            self._backend = self._backend_factory()
+        return self._backend
 
     @property
     def address(self) -> tuple[str, int]:
@@ -60,9 +75,9 @@ class _TcpService:
         return host, port
 
     def start(self) -> None:
-        self._thread = threading.Thread(target=self._accept_loop, name=f"{self.name}-accept", daemon=True)
+        self._thread = threading.Thread(target=self._accept_loop, name="dwf-accept", daemon=True)
         self._thread.start()
-        log.info("%s listening on %s:%d", self.name, *self.address)
+        log.info("listening on %s:%d", *self.address)
 
     def close(self) -> None:
         self._closed.set()
@@ -74,7 +89,7 @@ class _TcpService:
         if self._thread is not None:
             self._thread.join(timeout=5)
 
-    def __enter__(self) -> _TcpService:
+    def __enter__(self) -> Ad3Server:
         self.start()
         return self
 
@@ -92,54 +107,24 @@ class _TcpService:
             client.settimeout(None)
             client.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             if not self._busy.acquire(blocking=False):
-                log.warning("%s: refusing %s:%d, a client is already connected", self.name, *peer[:2])
+                log.warning("refusing %s:%d, a client is already connected", *peer[:2])
                 self._refuse(client)
                 continue
-            threading.Thread(target=self._run_client, args=(client, peer), name=f"{self.name}-client", daemon=True).start()
+            threading.Thread(target=self._run_client, args=(client, peer), name="dwf-client", daemon=True).start()
 
     def _run_client(self, client: socket.socket, peer: Any) -> None:
         self._clients.add(client)
-        log.info("%s: client %s:%d connected", self.name, *peer[:2])
+        log.info("client %s:%d connected", *peer[:2])
         try:
             self.serve(client)
         except Exception:
-            log.exception("%s: client %s:%d failed", self.name, *peer[:2])
+            log.exception("client %s:%d failed", *peer[:2])
         finally:
             self._clients.discard(client)
             with contextlib.suppress(OSError):
                 client.close()
-            log.info("%s: client %s:%d disconnected", self.name, *peer[:2])
+            log.info("client %s:%d disconnected", *peer[:2])
             self._busy.release()
-
-    def _refuse(self, client: socket.socket) -> None:
-        client.close()
-
-    def serve(self, client: socket.socket) -> None:
-        raise NotImplementedError
-
-
-class Ad3Server(_TcpService):
-    """Forwards `FDwf*` calls to `backend_factory()` (the local `DwfApi`, or `FakeDwfApi` for tests)."""
-
-    name = "dwf"
-
-    def __init__(
-        self,
-        backend_factory: Callable[[], Any],
-        host: str = "127.0.0.1",
-        port: int = DEFAULT_PORT,
-        token: str | None = None,
-    ) -> None:
-        super().__init__(host, port)
-        self._backend_factory = backend_factory
-        self._backend: Any = None
-        self._token = token
-
-    @property
-    def backend(self) -> Any:
-        if self._backend is None:
-            self._backend = self._backend_factory()
-        return self._backend
 
     def _refuse(self, client: socket.socket) -> None:
         # Read the hello first: closing with unread data would reset the connection before the reply arrives.
@@ -161,7 +146,7 @@ class Ad3Server(_TcpService):
                         return
                     write_frame(stream, self._handle(message, handles))
             except (OSError, WireError) as error:
-                log.warning("dwf: connection dropped: %s", error)
+                log.warning("connection dropped: %s", error)
             finally:
                 self._release(handles)
 
@@ -228,149 +213,51 @@ class Ad3Server(_TcpService):
         from ..instruments.ad3 import AnalogDiscovery3
 
         for handle in sorted(handles):
-            log.warning("dwf: client left device handle %d open; releasing outputs and closing it", handle)
+            log.warning("client left device handle %d open; releasing outputs and closing it", handle)
             device = AnalogDiscovery3(api_factory=lambda: self.backend)
             device.api = self.backend
             device.handle = c_int(handle)
             try:
                 device.close()
             except Exception:
-                log.exception("dwf: failed to close device handle %d cleanly", handle)
+                log.exception("failed to close device handle %d cleanly", handle)
         handles.clear()
-
-
-class SerialBridge(_TcpService):
-    """Serves the serial port `url` (`COM5`, `/dev/ttyACM0`, `loop://`) over RFC2217 to one client at a time.
-
-    The port is opened when a client connects and closed when it leaves, so other tools can use it in between.
-    """
-
-    name = "serial"
-
-    def __init__(self, url: str, host: str = "127.0.0.1", port: int = 4000) -> None:
-        super().__init__(host, port)
-        self.url = url
-        self.name = f"serial {url}"
-
-    def serve(self, client: socket.socket) -> None:
-        import serial
-        import serial.rfc2217
-
-        try:
-            port = serial.serial_for_url(self.url, timeout=0.05)
-        except serial.SerialException as error:
-            log.error("%s: cannot open the port: %s", self.name, error)
-            return
-        write_lock = threading.Lock()
-        alive = threading.Event()
-        alive.set()
-
-        class _Connection:
-            @staticmethod
-            def write(data: bytes) -> None:
-                with write_lock:
-                    client.sendall(data)
-
-        # The stubs expect an rfc2217.Serial; any pyserial port and any object with `write` work.
-        manager = serial.rfc2217.PortManager(port, _Connection(), logger=logging.getLogger(f"{__name__}.rfc2217"))  # type: ignore[arg-type]
-
-        def serial_to_socket() -> None:
-            last_poll = time.monotonic()
-            while alive.is_set():
-                try:
-                    data = port.read(port.in_waiting or 1)
-                    if data:
-                        _Connection.write(b"".join(manager.escape(data)))
-                    if time.monotonic() - last_poll >= 1.0:
-                        manager.check_modem_lines()
-                        last_poll = time.monotonic()
-                except (OSError, serial.SerialException) as error:
-                    log.warning("%s: %s", self.name, error)
-                    break
-            alive.clear()
-            with contextlib.suppress(OSError):
-                client.shutdown(socket.SHUT_RDWR)
-
-        reader = threading.Thread(target=serial_to_socket, name=f"{self.name}-reader", daemon=True)
-        reader.start()
-        try:
-            while alive.is_set():
-                try:
-                    data = client.recv(4096)
-                except OSError:
-                    break
-                if not data:
-                    break
-                port.write(b"".join(manager.filter(data)))
-        finally:
-            alive.clear()
-            reader.join(timeout=2)
-            port.close()
-
-
-def parse_serial_spec(spec: str) -> tuple[str, int]:
-    """`COM5=4000` -> (`COM5`, 4000)."""
-    url, sep, port = spec.rpartition("=")
-    if not sep or not url or not port.isdigit():
-        raise argparse.ArgumentTypeError(f"expected PORT=TCP_PORT, got {spec!r}")
-    return url, int(port)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="ad3-bench-server",
-        description="Share this machine's WaveForms library (Analog Discovery 3) and serial ports over TCP.",
+        description="Share this machine's WaveForms library (Analog Discovery 3) over TCP.",
     )
     parser.add_argument("--host", default="127.0.0.1", help="address to listen on (default 127.0.0.1; 0.0.0.0 for every interface)")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"TCP port of the WaveForms link (default {DEFAULT_PORT})")
     parser.add_argument(
-        "--token", default=os.environ.get("AD3_SERVER_TOKEN"), help="shared secret WaveForms clients must send (default AD3_SERVER_TOKEN)"
+        "--token", default=os.environ.get("AD3_SERVER_TOKEN"), help="shared secret clients must send (default AD3_SERVER_TOKEN)"
     )
-    parser.add_argument(
-        "--serial",
-        action="append",
-        default=[],
-        type=parse_serial_spec,
-        metavar="PORT=TCP",
-        help="serve a serial port over RFC2217, e.g. COM5=4000 (repeatable)",
-    )
-    parser.add_argument("--no-dwf", action="store_true", help="only serve the serial ports")
     parser.add_argument("--fake", action="store_true", help="serve the in-memory FakeDwfApi instead of the WaveForms library")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    logging.getLogger(f"{__name__}.rfc2217").setLevel(logging.DEBUG if args.verbose else logging.WARNING)
 
     if args.host not in ("127.0.0.1", "localhost", "::1") and not args.token:
         log.warning("listening on %s without --token: anyone who can reach this port controls the AD3", args.host)
 
-    services: list[_TcpService] = []
-    if not args.no_dwf:
-        if args.fake:
-            from ..instruments.fake import FakeDwfApi
+    if args.fake:
+        from ..instruments.fake import FakeDwfApi
 
-            factory: Callable[[], Any] = FakeDwfApi
-        else:
-            from ..instruments.dwf import DwfApi
+        factory: Callable[[], Any] = FakeDwfApi
+    else:
+        from ..instruments.dwf import DwfApi
 
-            factory = DwfApi
-        services.append(Ad3Server(factory, args.host, args.port, args.token))
-    services.extend(SerialBridge(url, args.host, port) for url, port in args.serial)
-    if not services:
-        parser.error("nothing to serve")
+        factory = DwfApi
 
     stop = threading.Event()
     signal.signal(signal.SIGINT, lambda *_: stop.set())
     with contextlib.suppress(AttributeError, ValueError):
         signal.signal(signal.SIGTERM, lambda *_: stop.set())
-    for service in services:
-        service.start()
-    try:
+    with Ad3Server(factory, args.host, args.port, args.token):
         while not stop.wait(0.5):
             pass
-    finally:
-        for service in services:
-            service.close()
     return 0
 
 

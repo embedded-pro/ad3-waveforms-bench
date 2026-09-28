@@ -7,11 +7,12 @@ and the project uses [semantic versioning](https://semver.org/).
 
 ### Added
 
-- `ad3-bench-server` shares the WaveForms library (and serial ports, over RFC2217) of the machine the AD3
-  is plugged into, for benches running in a container or on another machine.
+- `ad3-bench-server` shares the WaveForms library of the machine the AD3 is plugged into, for benches
+  running in a container or on another machine.
 - `RemoteDwfApi`, `AnalogDiscovery3(remote="host:port")`, the `AD3_REMOTE`/`AD3_REMOTE_TOKEN` variables and
   the `--ad3-remote` pytest option use such a server.
-- `FirmwareTerminal` accepts pyserial URLs (`rfc2217://`, `socket://`, `loop://`) as the port.
+- `FirmwareTerminal` accepts pyserial URLs (`socket://`, `rfc2217://`, `loop://`) as the port, for
+  example a serial port forwarded by port-bridge.
 - Type information (`py.typed`), mypy and coverage in CI, tests on Linux, Windows and macOS with Python
   3.10-3.14, wheel build checks and a tag-driven PyPI release workflow.
 

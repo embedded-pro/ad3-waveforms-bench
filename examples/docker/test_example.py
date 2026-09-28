@@ -1,5 +1,5 @@
 """Runs in the container: the `ad3` fixture reaches the host's AD3 through AD3_REMOTE, the terminal
-reaches the host's serial port through the RFC2217 URL in DUT_PORT."""
+reaches the host's serial port through port-bridge (the socket:// URL in DUT_PORT)."""
 
 import os
 
