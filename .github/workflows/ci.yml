@@ -3,24 +3,83 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: python -m pip install -e ".[dev]"
+      - run: ruff check --output-format=github .
+      - run: ruff format --check .
+      - run: mypy
+
   test:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
-        python-version: ["3.10", "3.12"]
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
+          cache: pip
+          cache-dependency-path: pyproject.toml
       - run: python -m pip install -e ".[dev]"
-      - run: ruff check .
-      - run: ruff format --check .
-      - run: pytest -q
+      # coverage starts before pytest so the modules imported by the pytest11 plugin are measured too
+      - run: coverage run -m pytest -q
+      - run: coverage report
+      - if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        run: |
+          echo "## Coverage" >> "$GITHUB_STEP_SUMMARY"
+          coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install build twine
+      - run: python -m build
+      - run: python -m twine check --strict dist/*
+      - name: Install the wheel into a clean environment
+        run: |
+          python -m venv /tmp/wheel-env
+          /tmp/wheel-env/bin/pip install dist/*.whl
+          cd /tmp
+          /tmp/wheel-env/bin/python -c "import ad3_waveforms_bench as p; print(p.__version__)"
+          /tmp/wheel-env/bin/python -c "import ad3_waveforms_bench, pathlib; assert (pathlib.Path(ad3_waveforms_bench.__file__).parent / 'py.typed').exists()"
+          /tmp/wheel-env/bin/ad3-bench-server --help
+          /tmp/wheel-env/bin/ad3-bench-console --help
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/

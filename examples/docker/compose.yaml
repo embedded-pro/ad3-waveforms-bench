@@ -1,0 +1,16 @@
+# On Windows, next to the AD3 and the DUT (WaveForms installed):
+#   pip install ad3-waveforms-bench
+#   ad3-bench-server --serial COM5=4000
+# Then here: docker compose run --rm bench
+services:
+  bench:
+    build: .
+    extra_hosts:
+      # Docker Desktop defines host.docker.internal already; this makes it work with Docker Engine on Linux too.
+      - "host.docker.internal:host-gateway"
+    environment:
+      AD3_REMOTE: host.docker.internal:5025
+      # AD3_REMOTE_TOKEN: change-me   # when the server runs with --token
+      DUT_PORT: rfc2217://host.docker.internal:4000
+    volumes:
+      - .:/bench

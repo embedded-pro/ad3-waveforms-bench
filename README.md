@@ -1,5 +1,10 @@
 # ad3-waveforms-bench
 
+[![CI](https://github.com/embedded-pro/ad3-waveforms-bench/actions/workflows/ci.yml/badge.svg)](https://github.com/embedded-pro/ad3-waveforms-bench/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/ad3-waveforms-bench)](https://pypi.org/project/ad3-waveforms-bench/)
+[![Python](https://img.shields.io/pypi/pyversions/ad3-waveforms-bench)](https://pypi.org/project/ad3-waveforms-bench/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 Python toolkit for driving a [Digilent Analog Discovery 3](https://digilent.com/reference/test-and-measurement/analog-discovery-3/start) (AD3) through the WaveForms SDK for hardware-in-the-loop (HIL) test benches.
 
 It bundles what a bench needs besides the device under test:
@@ -7,13 +12,16 @@ It bundles what a bench needs besides the device under test:
 - `AnalogDiscovery3` - supplies, static DIO, pattern generator, logic analyzer, wavegen, scope and the UART/SPI/CAN protocol engines, on a thin `ctypes` binding of the WaveForms SDK.
 - `analysis` - pure signal analysis of captures: frequency, duty cycle, edges, dead time, phase, quadrature/SPI/UART decoding, statistics.
 - `FirmwareTerminal` - a serial client for a line-based command terminal (`OK`/`ERR` final lines, asynchronous `EVT` lines) on the device under test, plus the `ad3-bench-console` REPL.
-- A pytest plugin (`--ad3-serial`, `--no-ad3`, `--fake`, the `ad3` marker and fixture) and in-memory fakes of the WaveForms library and of a device terminal, so benches are unit tested without hardware.
+- A pytest plugin (`--ad3-serial`, `--ad3-remote`, `--no-ad3`, `--fake`, the `ad3` marker and fixture) and in-memory fakes of the WaveForms library and of a device terminal, so benches are unit tested without hardware.
+- `ad3-bench-server` - shares the AD3 and serial ports of one machine (for example a Windows PC) over TCP, so benches run in a Docker container or on another machine.
 
 It was split out of the [hal-ti](https://github.com/embedded-pro/hal-ti) hardware-in-the-loop validation, which uses it to validate TM4C drivers.
 
 ## Install
 
 ```bash
+pip install ad3-waveforms-bench
+# or the development version
 pip install git+https://github.com/embedded-pro/ad3-waveforms-bench
 ```
 
@@ -30,6 +38,7 @@ Python 3.10 or newer. The Python dependencies are `pyserial` and `pytest`; the W
 - Set `DWF_LIBRARY` to the full path of the library when it is installed elsewhere.
 - The SDK constants come from the official `dwfconstants.py` when it is found in the SDK samples directory (or in `DWF_CONSTANTS_DIR`); otherwise an identical built-in copy is used.
 - Without the runtime everything except opening a device works: the analysis, terminal and fakes are pure Python, and the `ad3` fixture skips its tests.
+- A machine without the runtime (a container) can use the AD3 of another machine through `ad3-bench-server`, see [Remote AD3](#remote-ad3-windows-host-docker-bench).
 
 ## Analog Discovery 3
 
@@ -170,11 +179,12 @@ The console sends lines as typed, prints final lines and events, and keeps a his
 
 Installing the package registers a pytest plugin (entry point `pytest11`) that adds:
 
-| Option                | Effect                                                                              |
-|-----------------------|-------------------------------------------------------------------------------------|
-| `--ad3-serial SERIAL` | open the AD3 with this serial number (default: `AD3_SERIAL`, else the first device) |
-| `--no-ad3`            | skip every test marked `ad3` or using the `ad3` fixture                             |
-| `--fake`              | back the `ad3` fixture with `FakeDwfApi` instead of the WaveForms runtime           |
+| Option                     | Effect                                                                              |
+|----------------------------|-------------------------------------------------------------------------------------|
+| `--ad3-serial SERIAL`      | open the AD3 with this serial number (default: `AD3_SERIAL`, else the first device) |
+| `--ad3-remote HOST[:PORT]` | use the AD3 of an `ad3-bench-server` (default: `AD3_REMOTE`)                        |
+| `--no-ad3`                 | skip every test marked `ad3` or using the `ad3` fixture                             |
+| `--fake`                   | back the `ad3` fixture with `FakeDwfApi` instead of the WaveForms runtime           |
 
 - The `ad3` marker is registered, so it works with `--strict-markers`.
 - The session fixture `ad3` opens the device once, skips the requesting tests when no device (or runtime) is available, and closes it at the end.
@@ -231,6 +241,53 @@ terminal = FirmwareTerminal(serial=FakeSerial(device, chunk=3), timeout=0.5)
 assert terminal.command("get led").as_int("value") == 1
 ```
 
+## Remote AD3 (Windows host, Docker bench)
+
+The AD3 and the device under test are plugged into one machine (typically Windows with the WaveForms runtime), the benches run somewhere else (a Docker container, a Linux VM, a CI runner). `ad3-bench-server` runs next to the hardware and shares both over TCP:
+
+```text
+ Docker container                                 Windows host
+ ┌──────────────────────────────┐   TCP 5025     ┌──────────────────────────────┐
+ │ pytest / AnalogDiscovery3    │ ─────────────▶ │ ad3-bench-server             │── dwf.dll ── AD3 (USB)
+ │   RemoteDwfApi (AD3_REMOTE)  │   FDwf* calls  │                              │
+ │ FirmwareTerminal             │   TCP 4000     │   RFC2217 serial bridge      │── COM5 ───── DUT
+ │   rfc2217://host...:4000     │ ─────────────▶ │                              │
+ └──────────────────────────────┘                └──────────────────────────────┘
+```
+
+On the Windows host:
+
+```powershell
+pip install ad3-waveforms-bench
+ad3-bench-server --serial COM5=4000
+```
+
+In the container (Docker Desktop resolves `host.docker.internal` to the host):
+
+```bash
+export AD3_REMOTE=host.docker.internal:5025
+pytest --ad3-remote host.docker.internal:5025      # or rely on AD3_REMOTE
+ad3-bench-console --port rfc2217://host.docker.internal:4000
+```
+
+```python
+from ad3_waveforms_bench import AnalogDiscovery3, FirmwareTerminal
+
+with AnalogDiscovery3(remote="host.docker.internal:5025") as ad3, FirmwareTerminal("rfc2217://host.docker.internal:4000") as dut:
+    ad3.dio.drive(0, 1)
+    dut.command("ping")
+```
+
+- Every `FDwf*` call is forwarded with its ctypes arguments and out-parameters are written back (`RemoteDwfApi` replaces `DwfApi`), so the whole `AnalogDiscovery3` wrapper runs unchanged in the container and new SDK functions need no server update. The constants come from the server's runtime.
+- Each call is one round trip (well under a millisecond on the same host). Acquisitions are single-shot and triggered on the device, so timing is not affected; only polling loops (UART/CAN receive) see the extra latency.
+- One client at a time owns the AD3; others are refused with `busy`. When a client disconnects (or crashes), every device it left open is returned to the safe state (outputs released, V+/V- off) and closed.
+- `--serial PORT=TCP` (repeatable) serves a serial port over RFC2217, so the client sets the baud rate; the port is opened when a client connects and released when it leaves. Any pyserial URL works on both sides (`COM5`, `/dev/ttyACM0`, `loop://`).
+- `AnalogDiscovery3(remote=...)`, `AD3_REMOTE` (and `AD3_REMOTE_TOKEN`) or `--ad3-remote` select the server; an explicit `api_factory` still wins.
+- `ad3-bench-server --fake` serves `FakeDwfApi`, to try the setup without hardware.
+- The server listens on `127.0.0.1` by default. If the container cannot reach it (for example Docker Engine inside WSL2 rather than Docker Desktop), use `--host 0.0.0.0 --token <secret>`, set `AD3_REMOTE_TOKEN` in the container and keep the port behind the Windows firewall: whoever reaches the port controls the AD3. The serial bridge has no authentication.
+
+[`examples/docker`](examples/docker) has a `Dockerfile`, a `compose.yaml` and an example test.
+
 ## Why ctypes instead of pydwf
 
 - `instruments/dwf.py` calls the `FDwf*` C functions through `ctypes`, exactly like the official WaveForms SDK Python samples, and uses the official `dwfconstants.py` values.
@@ -246,8 +303,11 @@ python -m venv .venv
 pip install -e ".[dev]"
 ruff check .
 ruff format --check .
+mypy
 pytest -q
 ```
+
+CI runs these on Linux, Windows and macOS with Python 3.10-3.14 and checks the built wheel. Releases are published to PyPI from `v*` tags, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

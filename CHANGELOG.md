@@ -1,0 +1,24 @@
+# Changelog
+
+All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
+and the project uses [semantic versioning](https://semver.org/).
+
+## [Unreleased]
+
+### Added
+
+- `ad3-bench-server` shares the WaveForms library (and serial ports, over RFC2217) of the machine the AD3
+  is plugged into, for benches running in a container or on another machine.
+- `RemoteDwfApi`, `AnalogDiscovery3(remote="host:port")`, the `AD3_REMOTE`/`AD3_REMOTE_TOKEN` variables and
+  the `--ad3-remote` pytest option use such a server.
+- `FirmwareTerminal` accepts pyserial URLs (`rfc2217://`, `socket://`, `loop://`) as the port.
+- Type information (`py.typed`), mypy and coverage in CI, tests on Linux, Windows and macOS with Python
+  3.10-3.14, wheel build checks and a tag-driven PyPI release workflow.
+
+### Changed
+
+- The package version comes from the git tag (setuptools-scm).
+
+## [0.1.0]
+
+- First version, split out of the hal-ti hardware-in-the-loop validation.
