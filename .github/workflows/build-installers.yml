@@ -41,12 +41,12 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.tag_name || github.ref }}
           fetch-depth: 0 # setuptools-scm derives the version from the tag
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -86,7 +86,7 @@ jobs:
 
       - name: Upload build artifact
         if: env.TAG_NAME == ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-installer
           path: ${{ env.INSTALLER }}
@@ -98,12 +98,12 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.tag_name || github.ref }}
           fetch-depth: 0
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -165,7 +165,7 @@ jobs:
 
       - name: Upload build artifact
         if: env.TAG_NAME == ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-appimage
           path: ${{ env.APPIMAGE }}
