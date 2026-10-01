@@ -118,11 +118,17 @@ def test_scope_average(ad3, api):
 
 def test_uart_roundtrip(ad3, api):
     ad3.uart.configure(tx=1, rx=0, baud=115200, parity="even", stop=2)
-    assert api.calls_to("FDwfDigitalUartParitySet")[-1][1] == 2
+    assert api.calls_to("FDwfDigitalUartParitySet")[-1][1] == 1
     ad3.uart.write(b"hello")
     assert bytes(api.uart_tx) == b"hello"
     api.uart_rx += b"world"
     assert ad3.uart.read(5, timeout=0.2) == b"world"
+
+
+@pytest.mark.parametrize(("parity", "value"), [("none", 0), ("even", 1), ("odd", 2)])
+def test_uart_parity_uses_the_runtime_encoding(ad3, api, parity, value):
+    ad3.uart.configure(tx=1, rx=0, baud=115200, parity=parity)
+    assert api.calls_to("FDwfDigitalUartParitySet")[-1][1] == value
 
 
 def test_can_send_and_receive(ad3, api):
