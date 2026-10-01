@@ -374,6 +374,7 @@ class LogicAnalyzer(_Instrument):
         api, h, c = self._api, self._h, self._c
         clock = self.clock_hz
         divider = max(1, round(clock / rate))
+        api.FDwfDigitalInReset(h)
         api.FDwfDigitalInAcquisitionModeSet(h, c.acqmodeSingle)
         api.FDwfDigitalInDividerSet(h, c_uint(divider))
         api.FDwfDigitalInSampleFormatSet(h, c_int(16))
@@ -549,7 +550,8 @@ class Scope(_Instrument):
 
 
 class ProtocolUart(_Instrument):
-    PARITY = {"none": 0, "odd": 1, "even": 2}
+    # The runtime takes 1 = even, 2 = odd; older SDK manuals (and pydwf) list them the other way round.
+    PARITY = {"none": 0, "even": 1, "odd": 2}
 
     def __init__(self, device: AnalogDiscovery3) -> None:
         super().__init__(device)
