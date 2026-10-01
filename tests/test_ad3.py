@@ -90,6 +90,15 @@ def test_logic_capture_with_trigger(ad3, api):
         ad3.logic.record(rate=1e6, samples=10**6)
 
 
+def test_logic_arm_resets_digital_in_left_configured_by_a_protocol(ad3, api):
+    ad3.uart.configure(tx=1, rx=0, baud=115200)
+    ad3.uart.read(1, timeout=0.01)
+    api.calls.clear()
+    ad3.logic.arm(rate=1e6, samples=16)
+    digital_in = [name for name in api.names() if name.startswith("FDwfDigitalIn") and not name.endswith("Info")]
+    assert digital_in[0] == "FDwfDigitalInReset"
+
+
 def test_wavegen_limits_and_dc(ad3, api):
     ad3.wavegen.dc(1, 1.65)
     assert api.calls_to("FDwfAnalogOutNodeOffsetSet")[-1][3] == pytest.approx(1.65)

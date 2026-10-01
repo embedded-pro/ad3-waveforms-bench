@@ -374,6 +374,7 @@ class LogicAnalyzer(_Instrument):
         api, h, c = self._api, self._h, self._c
         clock = self.clock_hz
         divider = max(1, round(clock / rate))
+        api.FDwfDigitalInReset(h)
         api.FDwfDigitalInAcquisitionModeSet(h, c.acqmodeSingle)
         api.FDwfDigitalInDividerSet(h, c_uint(divider))
         api.FDwfDigitalInSampleFormatSet(h, c_int(16))
