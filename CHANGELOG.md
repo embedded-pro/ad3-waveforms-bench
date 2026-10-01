@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.1](https://github.com/embedded-pro/ad3-waveforms-bench/compare/v0.2.0...v0.2.1) (2026-10-01)
+
+
+### Bug Fixes
+
+* reset digital-in before arming the logic analyzer ([f8cc4ae](https://github.com/embedded-pro/ad3-waveforms-bench/commit/f8cc4ae525bdfa636406c5f4692329459d239cda))
+* send the UART parity code the WaveForms runtime expects ([0e2f644](https://github.com/embedded-pro/ad3-waveforms-bench/commit/0e2f644e9376ac8d10d56cb58c5a3e2df14f64d0))
+* UART parity mapping and digital-in reset before logic capture ([dcb3754](https://github.com/embedded-pro/ad3-waveforms-bench/commit/dcb3754fd4a4997e4e78cd824f48bc13b0c2435a))
+
 ## [0.2.0](https://github.com/embedded-pro/ad3-waveforms-bench/compare/v0.1.0...v0.2.0) (2026-09-28)
 
 
